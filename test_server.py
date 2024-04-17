@@ -1,5 +1,6 @@
 import unittest
 import requests
+from bs4 import BeautifulSoup
 
 class TestServer(unittest.TestCase):
     def test_server_connection(self):
@@ -10,17 +11,19 @@ class TestServer(unittest.TestCase):
     def test_login_page(self):
         # Test if the login page is accessible and contains expected content
         response = requests.get('http://127.0.0.1:12345')
-        self.assertIn('<title>Login Page</title>', response.text)
-        self.assertIn('<h1>Login</h1>', response.text)
-        self.assertIn('<form method="post" action="/login">', response.text)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        self.assertIn('<title>Login Page</title>', str(soup))
+        self.assertIn('<h1>Login</h1>', str(soup))
+        self.assertIn('<form method="post" action="/login">', str(soup))
         # Add more assertions as needed for other elements on the login page
 
     def test_register_page(self):
         # Test if the register page is accessible and contains expected content
         response = requests.get('http://127.0.0.1:12345')
-        self.assertIn('<title>Login Page</title>', response.text)
-        self.assertIn('<h1>Register</h1>', response.text)
-        self.assertIn('<form method="post" action="/register">', response.text)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        self.assertIn('<title>Login Page</title>', str(soup))
+        self.assertIn('<h1>Register</h1>', str(soup))
+        self.assertIn('<form method="post" action="/register">', str(soup))
         # Add more assertions as needed for other elements on the register page
 
     def test_dashboard_page_unauthorized_access(self):
