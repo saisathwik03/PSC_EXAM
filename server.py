@@ -44,6 +44,14 @@ def create_tables():
         )
     ''')
 
+    # Create courses table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS courses (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL
+        )
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -63,40 +71,24 @@ def handle_client(conn, addr):
 
         # Perform actions based on the received command
         if parts[0] == 'login':
-            username = parts[1]
-            password = parts[2]
-            if authenticate_user(username, password):
-                conn.sendall(b"Login successful")
-            else:
-                conn.sendall(b"Invalid username or password")
+            # Code for login request
+            pass
         elif parts[0] == 'register':
-            username = parts[1]
-            password = parts[2]
-            role = parts[3]
-            if role == 'student':
-                if register_user(username, password, role):
-                    conn.sendall(b"Student registration successful")
-                else:
-                    conn.sendall(b"Failed to register student")
-            elif role == 'teacher':
-                if register_teacher(username, password):
-                    conn.sendall(b"Teacher registration successful")
-                else:
-                    conn.sendall(b"Failed to register teacher")
-            else:
-                conn.sendall(b"Invalid role")
+            # Code for register request
+            pass
         elif parts[0] == 'create_course':
-            # Dummy implementation of creating a course
             course_name = parts[1]
-            conn.sendall(b"Course created successfully")
+            success, message = create_course(course_name)
+            if success:
+                conn.sendall(message.encode())
+            else:
+                conn.sendall(message.encode())
         elif parts[0] == 'enroll_course':
             # Dummy implementation of enrolling in a course
-            course_name = parts[1]
-            conn.sendall(b"Enrolled in course successfully")
+            pass
         elif parts[0] == 'drop_course':
             # Dummy implementation of dropping a course
-            course_name = parts[1]
-            conn.sendall(b"Course dropped successfully")
+            pass
         else:
             conn.sendall(b"Invalid command")
 
@@ -125,18 +117,35 @@ def register_user(username, password, role):
         print("Error registering user:", e)
         return False
 
-# Function to register teacher user and store in the database
-def register_teacher(username, password):
+# Function to create a new course
+def create_course(course_name):
     try:
         conn = psycopg2.connect(host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD)
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO users (username, password, role) VALUES (%s, %s, 'teacher')", (username, password))
+        
+        # Print the SQL query for debugging
+        print("INSERT INTO courses (name) VALUES (%s)" % course_name)
+        
+        # Execute the SQL query to insert the course
+        cursor.execute("INSERT INTO courses (name) VALUES (%s)", (course_name,))
+        
+        # Commit the transaction
         conn.commit()
+        
+        # Close the database connection
         conn.close()
-        return True
+        
+        # Return success message
+        return True, f"{course_name} is added successfully"
     except psycopg2.Error as e:
-        print("Error registering teacher:", e)
-        return False
+        # Print error message for debugging
+        print("Error creating course:", e)
+        
+        # Return error message
+        return False, "Failed to create course"
+
+
+
 
 # HTTP request handler class
 class RequestHandler(BaseHTTPRequestHandler):
@@ -165,12 +174,15 @@ class RequestHandler(BaseHTTPRequestHandler):
     </html>
     """
 
-    error_page = """
+    create_course_page = """
     <html>
-    <head><title>Error</title></head>
+    <head><title>Create Course</title></head>
     <body>
-        <h1>Error</h1>
-        <p>{}</p>
+        <h1>Create Course</h1>
+        <form method="post" action="/create_course">
+            Course Name: <input type="text" name="course_name"><br>
+            <input type="submit" value="Create Course">
+        </form>
     </body>
     </html>
     """
@@ -182,6 +194,11 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_header('Content-type', 'text/html')
             self.end_headers()
             self.wfile.write(self.index_page.encode())
+        elif self.path == '/create_course':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            self.wfile.write(self.create_course_page.encode())
         else:
             self.send_error(404, "File not found")
 
@@ -190,8 +207,9 @@ class RequestHandler(BaseHTTPRequestHandler):
         if self.path == '/login':
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length).decode()
-            username = post_data.split('&')[0].split('=')[1]
-            password = post_data.split('&')[1].split('=')[1]
+            username, password = post_data.split('&')
+            username = username.split('=')[1]
+            password = password.split('=')[1]
             if authenticate_user(username, password):
                 self.send_response(200)
                 self.send_header('Content-type', 'text/html')
@@ -201,59 +219,39 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_response(401)
                 self.send_header('Content-type', 'text/html')
                 self.end_headers()
-                error_message = "Invalid username or password"
-                self.wfile.write(self.error_page.format(error_message).encode())
+                self.wfile.write(b"Login failed")
         elif self.path == '/register':
+            # Code for register request
+            pass
+        elif self.path == '/create_course':
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length).decode()
-            username = post_data.split('&')[0].split('=')[1]
-            password = post_data.split('&')[1].split('=')[1]
-            role = post_data.split('&')[2].split('=')[1]
-            if role == 'student':
-                if register_user(username, password, role):
-                    self.send_response(200)
-                    self.send_header('Content-type', 'text/html')
-                    self.end_headers()
-                    self.wfile.write(b"Student registration successful")
-                else:
-                    self.send_response(500)
-                    self.send_header('Content-type', 'text/html')
-                    self.end_headers()
-                    error_message = "Failed to register student"
-                    self.wfile.write(self.error_page.format(error_message).encode())
-            elif role == 'teacher':
-                if register_teacher(username, password):
-                    self.send_response(200)
-                    self.send_header('Content-type', 'text/html')
-                    self.end_headers()
-                    self.wfile.write(b"Teacher registration successful")
-                else:
-                    self.send_response(500)
-                    self.send_header('Content-type', 'text/html')
-                    self.end_headers()
-                    error_message = "Failed to register teacher"
-                    self.wfile.write(self.error_page.format(error_message).encode())
-            else:
-                self.send_response(400)
+            course_name = post_data.split('=')[1]
+            success, message = create_course(course_name)
+            if success:
+                self.send_response(200)
                 self.send_header('Content-type', 'text/html')
                 self.end_headers()
-                error_message = "Invalid role"
-                self.wfile.write(self.error_page.format(error_message).encode())
+                self.wfile.write(message.encode())
+            else:
+                self.send_response(500)
+                self.send_header('Content-type', 'text/html')
+                self.end_headers()
+                self.wfile.write(message.encode())
         else:
             self.send_error(404, "File not found")
 
-# Main function to set up the server
+# Main function
 def main():
-    # Create the database if it does not exist
     create_database()
-
-    # Create tables in the database
     create_tables()
 
-    # Start HTTP server
-    http_server = HTTPServer((HOST, PORT), RequestHandler)
-    print(f"HTTP server listening on {HOST}:{PORT}")
-    http_server.serve_forever()
+    # Create HTTP server
+    server = HTTPServer((HOST, PORT), RequestHandler)
+    print(f"Server started on {HOST}:{PORT}")
+
+    # Serve requests indefinitely
+    server.serve_forever()
 
 if __name__ == "__main__":
     main()
