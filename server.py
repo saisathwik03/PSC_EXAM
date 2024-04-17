@@ -201,7 +201,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_response(401)
                 self.send_header('Content-type', 'text/html')
                 self.end_headers()
-                self.wfile.write(self.error_page.format("Invalid username or password").encode())
+                error_message = "Invalid username or password"
+                self.wfile.write(self.error_page.format(error_message).encode())
         elif self.path == '/register':
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length).decode()
@@ -218,7 +219,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                     self.send_response(500)
                     self.send_header('Content-type', 'text/html')
                     self.end_headers()
-                    self.wfile.write(self.error_page.format("Failed to register student").encode())
+                    error_message = "Failed to register student"
+                    self.wfile.write(self.error_page.format(error_message).encode())
             elif role == 'teacher':
                 if register_teacher(username, password):
                     self.send_response(200)
@@ -229,12 +231,14 @@ class RequestHandler(BaseHTTPRequestHandler):
                     self.send_response(500)
                     self.send_header('Content-type', 'text/html')
                     self.end_headers()
-                    self.wfile.write(self.error_page.format("Failed to register teacher").encode())
+                    error_message = "Failed to register teacher"
+                    self.wfile.write(self.error_page.format(error_message).encode())
             else:
                 self.send_response(400)
                 self.send_header('Content-type', 'text/html')
                 self.end_headers()
-                self.wfile.write(self.error_page.format("Invalid role").encode())
+                error_message = "Invalid role"
+                self.wfile.write(self.error_page.format(error_message).encode())
         else:
             self.send_error(404, "File not found")
 
