@@ -2,6 +2,8 @@ import socket
 import threading
 import psycopg2
 from http.server import HTTPServer, BaseHTTPRequestHandler
+import secrets
+import string
 
 # Define host and port
 HOST = '127.0.0.1'  # Standard loopback interface address (localhost)
@@ -13,6 +15,16 @@ DB_PORT = 5432
 DB_NAME = 'student'
 DB_USER = 'postgres'
 DB_PASSWORD = 'nani'
+
+# Function to generate session token
+def generate_session_token():
+    # Generate a random session token
+    alphabet = string.ascii_letters + string.digits
+    session_token = ''.join(secrets.choice(alphabet) for i in range(32))
+    return session_token
+
+# Global dictionary to store session tokens
+session_tokens = {}
 
 # Function to create database and tables
 def create_database():
@@ -52,100 +64,50 @@ def create_tables():
         )
     ''')
 
+    # Create enrolled_courses table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS enrolled_courses (
+            id SERIAL PRIMARY KEY,
+            student_name VARCHAR(50) NOT NULL,
+            course_name VARCHAR(100) NOT NULL,
+            FOREIGN KEY (course_name) REFERENCES courses(name)
+        )
+    ''')
+
     conn.commit()
     conn.close()
 
-# Function to handle client connections
-def handle_client(conn, addr):
-    print(f"Connected by {addr}")
-
-    # Receive and process client requests
-    while True:
-        data = conn.recv(1024).decode()
-
-        if not data:
-            break
-
-        # Split received data into parts
-        parts = data.split()
-
-        # Perform actions based on the received command
-        if parts[0] == 'login':
-            # Code for login request
-            pass
-        elif parts[0] == 'register':
-            # Code for register request
-            pass
-        elif parts[0] == 'create_course':
-            course_name = parts[1]
-            success, message = create_course(course_name)
-            if success:
-                conn.sendall(message.encode())
-            else:
-                conn.sendall(message.encode())
-        elif parts[0] == 'enroll_course':
-            # Dummy implementation of enrolling in a course
-            pass
-        elif parts[0] == 'drop_course':
-            # Dummy implementation of dropping a course
-            pass
-        else:
-            conn.sendall(b"Invalid command")
-
-    # Close connection when done
-    conn.close()
-
-# Function to authenticate user using PostgreSQL
-def authenticate_user(username, password):
+def fetch_available_courses():
     conn = psycopg2.connect(host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD)
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE username = %s AND password = %s", (username, password))
-    user = cursor.fetchone()
+    cursor.execute("SELECT name FROM courses")
+    courses = [row[0] for row in cursor.fetchall()]
     conn.close()
-    return user is not None
+    return courses
 
-# Function to register user and store in the database
-def register_user(username, password, role):
+def enroll_course(student_name, course_name):
     try:
         conn = psycopg2.connect(host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD)
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO users (username, password, role) VALUES (%s, %s, %s)", (username, password, role))
+        cursor.execute("INSERT INTO enrolled_courses (student_name, course_name) VALUES (%s, %s)", (student_name, course_name))
         conn.commit()
         conn.close()
         return True
     except psycopg2.Error as e:
-        print("Error registering user:", e)
+        print("Error enrolling course:", e)
         return False
 
-# Function to create a new course
-def create_course(course_name):
+def drop_course(student_name, course_name):
     try:
         conn = psycopg2.connect(host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD)
         cursor = conn.cursor()
-        
-        # Print the SQL query for debugging
-        print("INSERT INTO courses (name) VALUES (%s)" % course_name)
-        
-        # Execute the SQL query to insert the course
-        cursor.execute("INSERT INTO courses (name) VALUES (%s)", (course_name,))
-        
-        # Commit the transaction
+        cursor.execute("DELETE FROM enrolled_courses WHERE student_name = %s AND course_name = %s", (student_name, course_name))
         conn.commit()
-        
-        # Close the database connection
         conn.close()
-        
-        # Return success message
-        return True, f"{course_name} is added successfully"
+        return True
     except psycopg2.Error as e:
-        # Print error message for debugging
-        print("Error creating course:", e)
-        
-        # Return error message
-        return False, "Failed to create course"
-
-
-
+        print("Error dropping course:", e)
+        return False
 
 # HTTP request handler class
 class RequestHandler(BaseHTTPRequestHandler):
@@ -174,6 +136,23 @@ class RequestHandler(BaseHTTPRequestHandler):
     </html>
     """
 
+    dashboard_page = """
+    <html>
+    <head><title>Dashboard</title></head>
+    <body>
+        <h1>Welcome to Your Dashboard, %s</h1>
+        <h2>Enrolled Courses:</h2>
+        <ul>
+        %s
+        </ul>
+        <h2>Available Courses:</h2>
+        <ul>
+        %s
+        </ul>
+    </body>
+    </html>
+    """
+
     create_course_page = """
     <html>
     <head><title>Create Course</title></head>
@@ -194,6 +173,21 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_header('Content-type', 'text/html')
             self.end_headers()
             self.wfile.write(self.index_page.encode())
+        elif self.path == '/dashboard':
+            # Fetch enrolled courses for the current user
+            student_name = session_tokens.get(self.headers.get('Cookie').split('=')[1])
+            if student_name:
+                enrolled_courses = fetch_enrolled_courses(student_name)
+                available_courses = fetch_available_courses()
+                enrolled_courses_html = "".join([f"<li>{course}</li>" for course in enrolled_courses])
+                available_courses_html = "".join([f"<li>{course}</li>" for course in available_courses])
+                dashboard_content = self.dashboard_page % (student_name, enrolled_courses_html, available_courses_html)
+                self.send_response(200)
+                self.send_header('Content-type', 'text/html')
+                self.end_headers()
+                self.wfile.write(dashboard_content.encode())
+            else:
+                self.send_error(401, "Unauthorized")
         elif self.path == '/create_course':
             self.send_response(200)
             self.send_header('Content-type', 'text/html')
@@ -205,43 +199,47 @@ class RequestHandler(BaseHTTPRequestHandler):
     # Handle POST requests
     def do_POST(self):
         if self.path == '/login':
+            # Code to authenticate user
+            # If authentication successful, generate session token and redirect to dashboard
+            session_token = generate_session_token()
+            session_tokens[session_token] = self.headers['username']  # Assuming username is sent in the request headers
+            self.send_response(302)
+            self.send_header('Location', '/dashboard')
+            self.send_header('Set-Cookie', f'session_token={session_token}; Path=/')  # Set session token in cookie
+            self.end_headers()
+        elif self.path == '/enroll_course':
+            # Code to enroll in a course
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length).decode()
-            username, password = post_data.split('&')
-            username = username.split('=')[1]
-            password = password.split('=')[1]
-            if authenticate_user(username, password):
-                self.send_response(200)
-                self.send_header('Content-type', 'text/html')
-                self.end_headers()
-                self.wfile.write(b"Login successful")
+            student_name = session_tokens.get(self.headers.get('Cookie').split('=')[1])
+            if student_name:
+                course_name = post_data.split('=')[1]
+                if enroll_course(student_name, course_name):
+                    self.send_response(302)
+                    self.send_header('Location', '/dashboard')
+                    self.end_headers()
+                else:
+                    self.send_error(500, "Failed to enroll in course")
             else:
-                self.send_response(401)
-                self.send_header('Content-type', 'text/html')
-                self.end_headers()
-                self.wfile.write(b"Login failed")
-        elif self.path == '/register':
-            # Code for register request
-            pass
-        elif self.path == '/create_course':
+                self.send_error(401, "Unauthorized")
+        elif self.path == '/drop_course':
+            # Code to drop a course
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length).decode()
-            course_name = post_data.split('=')[1]
-            success, message = create_course(course_name)
-            if success:
-                self.send_response(200)
-                self.send_header('Content-type', 'text/html')
-                self.end_headers()
-                self.wfile.write(message.encode())
+            student_name = session_tokens.get(self.headers.get('Cookie').split('=')[1])
+            if student_name:
+                course_name = post_data.split('=')[1]
+                if drop_course(student_name, course_name):
+                    self.send_response(302)
+                    self.send_header('Location', '/dashboard')
+                    self.end_headers()
+                else:
+                    self.send_error(500, "Failed to drop course")
             else:
-                self.send_response(500)
-                self.send_header('Content-type', 'text/html')
-                self.end_headers()
-                self.wfile.write(message.encode())
+                self.send_error(401, "Unauthorized")
         else:
             self.send_error(404, "File not found")
 
-# Main function
 def main():
     create_database()
     create_tables()
