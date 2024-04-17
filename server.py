@@ -73,10 +73,18 @@ def handle_client(conn, addr):
             username = parts[1]
             password = parts[2]
             role = parts[3]
-            if register_user(username, password, role):
-                conn.sendall(b"Registration successful")
+            if role == 'student':
+                if register_user(username, password, role):
+                    conn.sendall(b"Student registration successful")
+                else:
+                    conn.sendall(b"Failed to register student")
+            elif role == 'teacher':
+                if register_teacher(username, password):
+                    conn.sendall(b"Teacher registration successful")
+                else:
+                    conn.sendall(b"Failed to register teacher")
             else:
-                conn.sendall(b"Failed to register user")
+                conn.sendall(b"Invalid role")
         elif parts[0] == 'create_course':
             # Dummy implementation of creating a course
             course_name = parts[1]
@@ -115,6 +123,19 @@ def register_user(username, password, role):
         return True
     except psycopg2.Error as e:
         print("Error registering user:", e)
+        return False
+
+# Function to register teacher user and store in the database
+def register_teacher(username, password):
+    try:
+        conn = psycopg2.connect(host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD)
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO users (username, password, role) VALUES (%s, %s, 'teacher')", (username, password))
+        conn.commit()
+        conn.close()
+        return True
+    except psycopg2.Error as e:
+        print("Error registering teacher:", e)
         return False
 
 # HTTP request handler class
@@ -187,16 +208,33 @@ class RequestHandler(BaseHTTPRequestHandler):
             username = post_data.split('&')[0].split('=')[1]
             password = post_data.split('&')[1].split('=')[1]
             role = post_data.split('&')[2].split('=')[1]
-            if register_user(username, password, role):
-                self.send_response(200)
-                self.send_header('Content-type', 'text/html')
-                self.end_headers()
-                self.wfile.write(b"Registration successful")
+            if role == 'student':
+                if register_user(username, password, role):
+                    self.send_response(200)
+                    self.send_header('Content-type', 'text/html')
+                    self.end_headers()
+                    self.wfile.write(b"Student registration successful")
+                else:
+                    self.send_response(500)
+                    self.send_header('Content-type', 'text/html')
+                    self.end_headers()
+                    self.wfile.write(self.error_page.format("Failed to register student").encode())
+            elif role == 'teacher':
+                if register_teacher(username, password):
+                    self.send_response(200)
+                    self.send_header('Content-type', 'text/html')
+                    self.end_headers()
+                    self.wfile.write(b"Teacher registration successful")
+                else:
+                    self.send_response(500)
+                    self.send_header('Content-type', 'text/html')
+                    self.end_headers()
+                    self.wfile.write(self.error_page.format("Failed to register teacher").encode())
             else:
-                self.send_response(500)
+                self.send_response(400)
                 self.send_header('Content-type', 'text/html')
                 self.end_headers()
-                self.wfile.write(self.error_page.format("Failed to register user").encode())
+                self.wfile.write(self.error_page.format("Invalid role").encode())
         else:
             self.send_error(404, "File not found")
 
